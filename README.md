@@ -1,74 +1,90 @@
 # Sathvika M V Store
 
-A mobile-first, installable inventory and billing PWA for Sathvika M V Provision Store. It uses React/Vite, Supabase Auth + Postgres with RLS, browser camera scanning, SheetJS-compatible Excel/CSV import/export, and Recharts analytics.
+A mobile-first, installable inventory, billing, supplier-dues and customer-credit PWA for Sathvika M V Provision Store. It uses React/Vite, Supabase Auth + Postgres with row-level security, barcode scanning, Excel/CSV import/export and Recharts.
 
 ## Run locally
 
 ```sh
 npm install
 cp .env.example .env.local
-# fill in the Supabase project URL and public anon/publishable key
+# Add the Supabase project URL and public anon/publishable key
 npm run dev
 ```
 
-For camera scanning, use HTTPS or `localhost` and allow camera access. On a phone, use the browser's **Install app / Add to Home Screen** option. The service worker caches the app shell; stock additions are queued in local storage while offline and sent to Supabase when the phone reconnects. Other phones see the shared stock after sync (enable Supabase Realtime for live updates while open). Keep browser storage enabled so a phone can retain its pending stock queue.
+For camera scanning, use HTTPS or `localhost` and allow camera access. On a phone, use **Install app / Add to Home Screen**. Stock additions can be queued locally while offline and sent to Supabase on reconnect. Purchase bills, supplier/customer payments, and credit bills require an internet connection. Enable Supabase Realtime for `products`, `batches` and `sales` to refresh already-open devices.
 
-There is no sample/demo store. The app requires a Supabase project and a real account.
+There is no seeded sample/demo store. Use only real store data.
 
-## Supabase setup and first owner
+## Supabase: fresh project setup
 
-Use a **fresh Supabase project** for this schema. The SQL creates the tables, first-owner bootstrap, bill/FEFO functions, and row-level security policies.
-
-1. In Supabase, create a project. In **Authentication → Providers → Email**, enable email/password sign-in. For the first owner only, turn email confirmation off so the first owner can claim the account immediately.
-2. Open **SQL Editor → New query**, paste the complete `supabase/schema.sql`, and run it once. It creates `profiles`, `categories`, `products`, `batches`, `sales`, `sale_items`, and `shop_settings`. The first account is claimed as owner through the database's one-time `claim_first_owner()` function. Auth users created without an owner remain inactive and cannot read store data.
-3. Set local environment variables in `.env.local` (or Vercel project settings):
+1. Create a Supabase project. Enable email/password sign-in under **Authentication → Providers → Email**. For first-owner setup, temporarily disable email confirmation.
+2. Open **SQL Editor → New query**, paste the complete `supabase/schema.sql`, and click **Run**. It creates the final tables, RLS policies, grants, owner bootstrap, import undo, staff activation and FEFO billing functions. It does not insert sample products or sales.
+3. Set these public browser values in `.env.local` (and later in Vercel):
 
    ```env
    VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
    VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_OR_PUBLISHABLE_KEY
    ```
 
-   These are the public browser credentials. **Never** add a Supabase service-role key to `.env.local`, Vite variables, Git, or browser code.
-4. Run the app and use **Create owner account** on the first screen. This screen is shown only while there is no active owner. After setup, disable public sign-ups in **Authentication → Settings**; the app has no public sign-up link. Staff accounts are created only through the owner-protected Edge Function.
-5. Deploy the staff-admin function from this repository:
+   Never put the Supabase service-role key in Vite variables, Git, the browser, or chat.
+4. Start the app and use **Create owner account**. The first signed-in account claims the one-time owner role through `claim_first_owner()`. Then disable public sign-ups under **Authentication → Settings**.
+5. For owner password resets, allow the deployed site URL in **Authentication → URL Configuration**. Enable Realtime for `products`, `batches`, and `sales` under **Database → Replication**.
 
-   ```sh
-   npx supabase login
-   npx supabase link --project-ref YOUR_PROJECT_REF
-   npx supabase functions deploy staff-admin
-   ```
+## Upgrade an existing v2 database (important)
 
-   Supabase supplies `SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` to Edge Functions. The service-role key is used only inside the function to create/reset/remove Auth users. Do not expose it to the client.
-6. In **Database → Replication**, enable Realtime for `products`, `batches`, and `sales` to refresh already-open phones as changes arrive. Auth password reset redirects must include the deployed site URL in **Authentication → URL Configuration**.
-7. Sign in as owner and add staff in **More → Staff accounts**. Each staff account gets an email and temporary password; share the password privately. The staff role is assigned server-side and enforced by RLS.
+Do **not** run the fresh schema over an existing store. Run the single additive migration instead:
 
-RLS rules let staff read products/batches, add stock batches, and create bills through the atomic `create_sale` function. Staff cannot insert/edit product prices, update/delete stock, read other staff's sales, cancel bills, manage accounts, or access owner reports/exports. Owners can manage products, correct batches, see all sales, cancel bills, and export. `create_sale` deducts unexpired stock FEFO inside one database transaction; expired/short stock causes the entire bill to fail without partial deduction.
+1. Open the Supabase project dashboard.
+2. Click **SQL Editor** in the left sidebar, then **New query**.
+3. Open this repository file `supabase/migration_v3.sql`, copy the entire file, and paste it into the query editor.
+4. Click **Run** and wait for the success result before using the new screens. The migration uses additive `IF NOT EXISTS`/`ADD VALUE IF NOT EXISTS` changes, grants authenticated-role privileges for each new table, and leaves RLS enabled. It does not create demo records.
 
-## Import your Excel file
+The migration has not been executed against your live project in this workspace. Make a database backup before applying it to a production store.
 
-1. Sign in as the owner and open **Stock → Import**.
-2. Choose `.xlsx`, `.xls`, or `.csv`. The importer scans the first 50 rows for the best header match, so a title in row 1 and headings in row 3 are okay. Blank rows are ignored.
-3. Check **Match your columns**. The headings in your file are recognized: `Item Code`, `Product Name`, `Category`, `Manf Date`, `EXP Date`, `Unit (this is quantity)`, and `Selling Price Per Piece`. Change any dropdown if needed.
-4. Review the row counts and reasons. Missing name, price, or units and expiry-before-manufacture need correction. Missing dates and already-expired stock are allowed in, marked **Check dates**. If a barcode repeats with a different product name, edit that row's code before import.
-5. Import. Existing barcodes receive another batch; they do not create another product. Download the CSV or Excel template from the import screen at any time.
+## Staff accounts without deploying an Edge Function
 
-Accepted dates include Excel date cells, `dd-mm-yyyy`, `dd/mm/yyyy`, and `yyyy-mm-dd`. Numeric/scientific barcodes are expanded to digit text where the source retains those digits. If Excel has already removed leading zeroes from a numeric code, format that source column as Text before saving to preserve them.
+The owner can open **More → Staff accounts → Open staff setup help**. The screen includes exact SQL Editor steps and a copyable SQL script that creates a confirmed Auth user and active staff profile using an email and temporary password. Replace the example email, password and name before running it. Use a fresh email, keep the temporary password private, and have the staff member change it after sign-in. This script writes to Supabase Auth tables directly, so use the version shown by the app and test it in a non-production project first if your Supabase Auth schema has customizations.
+
+Use **Deactivate** or **Reactivate** in the staff list at any time. Deactivation is done by an owner-checked database function and immediately prevents the staff profile from accessing store data. For password resets, use Supabase **Authentication → Users** or the app’s Forgot password flow.
+
+Staff can add stock, search products, bill and add customer identities. RLS denies staff access to supplier money screens, reports, exports, customer balances, and customer payment history. Staff customer queries are restricted to the `id`, `name`, and `phone` columns.
+
+## Import stock
+
+1. Sign in as owner and open **Stock → Import file**.
+2. Select `.xlsx`, `.xls` or `.csv`. The importer searches the first 50 rows for headings, so a title and blank rows above row 3 are okay.
+3. Check column matches and preview row reasons. Missing/expired dates are warnings; missing required product/price/quantity or invalid dates need attention.
+4. If a barcode exists, choose **Add as new delivery**, **Set stock to match this file**, or **Skip existing products** (the default). The app flags matching file hashes and row sets, displays import progress and a final created/updated/skipped/failed summary, and offers **Undo this import** for 10 minutes.
+5. Header-only CSV/Excel templates are available from the import screen. Excel date cells, Excel serial dates and common day/month date strings are supported. Numeric/scientific barcode values are expanded where the source retains all digits; use Text formatting in Excel if leading zeroes matter.
+
+Expired quantities are excluded from current stock and value calculations. Owners can remove expired stock from the red Home card; the original quantity, batch/product details and removal time are retained in `expired_stock_removals`.
+
+## Supplier purchases and customer credit
+
+- Owners may add a supplier purchase bill during stock entry, associate batches to it, record paid-now amounts and optional reminder dates, and save cost price per batch.
+- **More → Dues** shows unpaid/part-paid bills, reminder-based overdue totals, due-this-week totals, payment history and partial payment controls. A canceled purchase asks whether linked stock should also be zeroed.
+- **Bill → Credit** requires a customer and supports a paid-now amount. **More → Customers** shows owner-only balances, credit bills and payments; staff can create/identify customers but cannot see this ledger.
+- Credit bills remain sales on their bill date. Customer repayments are reported separately from Cash, UPI and Credit given.
 
 ## Deploy free on Vercel
 
-1. Push/import this GitHub repository into Vercel and select the **Vite** preset.
+1. Import this GitHub repository into Vercel and choose the **Vite** preset.
 2. Set build command `npm run build` and output directory `dist`.
-3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` in Vercel's Environment Variables for Preview and Production, then redeploy.
-4. Deploy the Supabase `staff-admin` Edge Function separately as above; Vercel serves the web app and does not host the Supabase service key.
-5. Add your Vercel production URL to Supabase Auth's Site URL and Redirect URLs; enable Realtime for the three stock/sales tables.
+3. Add `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` for Preview and Production, then redeploy.
+4. Add your production URL to Supabase Auth’s Site URL and Redirect URLs; enable Realtime as above. No Edge Function deployment is required for staff creation/deactivation.
 
-For camera scanning, the deployed site must be HTTPS. The same Vite build can also be hosted on Netlify (`npm run build`, publish `dist`).
+Camera scanning requires HTTPS. The same Vite build can be hosted on Netlify with `npm run build` and `dist` as the publish directory.
 
 ## Main features
 
-- Owner-only first-account setup, email/password sign-in, persistent Supabase session and password reset.
-- Owner-managed staff accounts; owner/staff permissions enforced by SQL RLS and security-definer bill functions.
-- Stock capture, custom short codes for loose goods, product search, category filters, batch detail/correction, barcode scan, CSV/Excel import with header detection, row mapping and preview, and offline stock queue.
-- FEFO cash/UPI billing, optional customer/discount, printable/shareable receipts and searchable bill history with owner cancellation/restock.
-- Owner-only real-data sales/stock reports and Excel/CSV downloads, including a multi-sheet full backup.
-- English/Tamil language switch for the main navigation and common tasks; installable PWA with offline shell.
+- Owner-first authentication, persistent sessions, password reset, owner/staff role checks and SQL RLS.
+- Barcode scanning, inventory search/sorting, stock batches, category limits, grouped expiry alerts and offline stock queue.
+- Excel/CSV imports with validation, repeat-import detection, explicit duplicate-barcode choices, progress and time-limited undo.
+- FEFO Cash/UPI/Credit billing, customer selection, receipts, searchable history and owner cancellation/restock.
+- Supplier purchases, supplier dues/partial payments, customer balances and payments.
+- Owner-only reports, CSV/XLSX exports and a full multi-sheet backup including supplier/customer ledgers.
+- English/Tamil navigation and installable PWA shell.
+
+## Verification and limits
+
+`npm run build` is the current local build check. The SQL migration, Auth-table staff script, RLS behavior, concurrent payment/billing behavior, and all Supabase reads/writes need testing against a non-production Supabase project before rollout. This app has not been tested against a live Supabase database or deployed from this repository. The build currently reports a large-chunk warning for Excel/chart bundles; it still completes successfully.

@@ -100,5 +100,5 @@ export function mappedRecord(record, mapping, date1904=false) {
     units:Number(String(get('units')??'').replace(/[,\s]/g,''))||0,
   };
 }
-export function csvTemplate(){return 'barcode,name,category,mrp,mfg_date,expiry_date,units\n8901234567890,Example biscuits,Snacks,20,2026-01-01,2027-01-01,12\n'}
-export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','mfg_date','expiry_date','units'],['8901234567890','Example biscuits','Snacks',20,'2026-01-01','2027-01-01',12]]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}
+export function csvTemplate(){return 'barcode,name,category,mrp,mfg_date,expiry_date,units\n'}
+export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','mfg_date','expiry_date','units']]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}
