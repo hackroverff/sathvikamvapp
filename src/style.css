@@ -63,3 +63,18 @@ small,.muted,.eyebrow,.page-heading p,.welcome p,.tip-card p,.receipt-meta span,
 .sales-card strong,.summary-card>strong,.report-card>b,.detail-price strong,.customer-balance-card>b,.payment-summary b,.bill-sticky>div b,.receipt-total strong{font-family:inherit!important;font-size:24px!important;font-weight:600!important;font-variant-numeric:tabular-nums}
 @media(max-width:399px){.home-money-grid{grid-template-columns:1fr}.home-money-card{min-height:90px}}
 @media print{.receipt-brand h1,.receipt-brand>span{color:#111!important}.receipt-logo{print-color-adjust:exact;-webkit-print-color-adjust:exact}}
+/* Stock-alert tabs, date editor shortcuts, and shared expired-stock totals */
+.stock-alert-tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:4px}
+.stock-alert-tabs button{min-width:0;padding:5px 3px;line-height:1.15;font-size:12px}
+.stock-alert-tabs button span{margin-left:3px;padding:2px 6px;font-size:11px}
+.expired-summary{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:15px;margin:0 0 14px;border:1px solid var(--line);border-radius:15px;background:#fff}
+.expired-summary>div{display:grid;gap:3px}.expired-summary>div>span{font-size:14px;color:var(--muted)}.expired-summary>div>b{font-size:23px;font-weight:600;font-variant-numeric:tabular-nums}
+.expired-summary .btn{grid-column:1/-1}
+.expired-batch-row .alert-copy span,.check-date-row .alert-copy span{line-height:1.45}
+.danger-outline{border-color:#d26a63!important;color:#ad342d!important;background:#fff!important}
+.expired-stock-card[role="button"]{cursor:pointer}
+.expired-stock-card[role="button"]:hover{border-color:#d7aaa6!important;box-shadow:0 5px 16px #39100e0b}
+.expiry-window-setting{display:grid;gap:7px;max-width:400px;margin:10px 0 14px;font-size:14px;font-weight:600;color:#46554a}
+.expiry-window-setting input{height:50px;border:1px solid #dfe6df;border-radius:11px;padding:0 12px;background:#fff;color:var(--ink);font:inherit}
+.expiry-window-setting input:disabled{background:#f3f5f3;color:var(--muted)}
+@media(max-width:420px){.stock-alert-tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.expired-summary{gap:9px;padding:13px}.expired-batch-row{align-items:flex-start}.expired-batch-row .btn{padding:0 9px!important}}
