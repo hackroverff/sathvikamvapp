@@ -81,3 +81,17 @@ small,.muted,.eyebrow,.page-heading p,.welcome p,.tip-card p,.receipt-meta span,
 
 /* Two-price and owner batch/bulk-edit controls. */
 .detail-mrp,.price-compare,.receipt-price-note{display:block;color:#68766d;font-size:.78rem;margin-top:3px}.price-compare{display:inline-block;margin-left:6px}.product-card-wrap{display:flex;align-items:center;gap:10px}.product-card-wrap>.product-card{flex:1;min-width:0}.product-card-wrap>input[type=checkbox]{width:20px;height:20px;accent-color:#25754b;flex:0 0 auto}.bulk-edit-card{display:grid;gap:12px}.bulk-preview{display:grid;gap:8px;border-top:1px solid #e5ebe6;padding-top:12px}.bulk-preview>div:not(.modal-actions){display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid #edf0ee}.bulk-preview small{color:#68766d}.danger-text{color:#a13d35}
+
+/* v5 owner-only pricing, supplier workflow and concise stock confirmations */
+.owner-profit-chip{display:block;width:max-content;max-width:100%;margin-top:4px;padding:3px 7px;border-radius:999px;background:#e6f4ea;color:#245b38;font-size:.67rem;font-weight:700;white-space:normal}
+.offer-savings{display:block;color:#18834b;font-size:.78rem;font-weight:700}
+.supplier-directory-row{width:100%;text-align:left;cursor:pointer;border:0;border-bottom:1px solid #edf0ed;background:transparent;font:inherit}
+.supplier-directory-row:hover{background:#f5faf6}
+.attention-dialog,.stock-saved-dialog{max-width:440px}
+.attention-list{max-height:240px;overflow:auto;margin:12px 0}
+.attention-list>div{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid #e7ece8}
+.attention-list span{color:#637268;font-size:.82rem}
+.stock-saved-dialog .report-grid{margin:18px 0}
+.stock-saved-dialog .report-card{padding:12px}
+.success-mark{display:grid;place-items:center;width:42px;height:42px;border-radius:50%;background:#e7f5eb;color:#237343}
+.category-limit-row{flex-wrap:wrap}
