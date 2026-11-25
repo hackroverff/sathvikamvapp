@@ -6,6 +6,8 @@ export const IMPORT_FIELDS = [
   {key:'category', label:'Category', aliases:['category','product category','group']},
   {key:'mrp', label:'MRP (printed pack price)', aliases:['mrp','printed mrp','mrp printed','mrp value','printed price','printed pack price','maximum retail price']},
   {key:'selling_price', label:'Selling price', aliases:['selling price per piece','selling price per unit','selling price','sellingprice','selling_price','sell price','sale price','sales price','selling rate','sell rate','rate','unit price','price','retail price','our price']},
+  {key:'cost_price', label:'Buying / purchase cost', aliases:['buying price','buying cost','purchase cost','purchase price','cost price','cost','unit cost','buy price','buy rate']},
+  {key:'supplier', label:'Supplier / vendor', aliases:['supplier','supplier name','vendor','vendor name','party name','distributor']},
   {key:'mfg_date', label:'Made date', aliases:['manf date','manf. date','mfg date','manufacturing date','manufacture date','mfg_date','mfd','made date']},
   {key:'expiry_date', label:'Expiry date', aliases:['exp date','expiry date','expiration date','expiry','exp_date','best before']},
   {key:'units', label:'Quantity / units', aliases:['unit (this is quantity)','units','unit','qty','quantity','stock','closing stock','balance']},
@@ -102,11 +104,13 @@ export function mappedRecord(record, mapping, date1904=false) {
     category:String(get('category')??'').trim()||'General',
     mrp,
     selling_price,
+    cost_price:empty(get('cost_price'))?null:amount(get('cost_price')),
+    supplier:String(get('supplier')??'').trim(),
     mrp_confirmed:mrpColumn&&sellingColumn&&rawMrp>0&&rawSelling>0,
     mfg_date:parseImportedDate(get('mfg_date'),date1904),
     expiry_date:parseImportedDate(get('expiry_date'),date1904),
     units:Number(String(get('units')??'').replace(/[,\s]/g,''))||0,
   };
 }
-export function csvTemplate(){return 'barcode,name,category,mrp,selling_price,mfg_date,expiry_date,units\n'}
-export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','selling_price','mfg_date','expiry_date','units']]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}
+export function csvTemplate(){return 'barcode,name,category,mrp,selling_price,cost_price,supplier,mfg_date,expiry_date,units\n'}
+export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','selling_price','cost_price','supplier','mfg_date','expiry_date','units']]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}

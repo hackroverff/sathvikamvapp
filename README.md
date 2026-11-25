@@ -18,7 +18,7 @@ There is no seeded sample/demo store. Use only real store data.
 ## Supabase: fresh project setup
 
 1. Create a Supabase project. Enable email/password sign-in under **Authentication → Providers → Email**. For first-owner setup, temporarily disable email confirmation.
-2. Open **SQL Editor → New query**, paste the complete `supabase/schema.sql`, and click **Run**. It creates the final tables, RLS policies, grants, owner bootstrap, import undo, staff activation and FEFO billing functions. It does not insert sample products or sales.
+2. Open **SQL Editor → New query**, paste the complete `supabase/schema.sql`, and click **Run**. It creates the final v5 tables, RLS policies, grants, owner bootstrap, import undo, staff activation and FEFO billing functions. It does not insert sample products or sales.
 3. Set these public browser values in `.env.local` (and later in Vercel):
 
    ```env
@@ -32,14 +32,22 @@ There is no seeded sample/demo store. Use only real store data.
 
 ## Upgrade an existing database (important)
 
-Do **not** run the fresh schema over an existing store. Apply migrations in order, once each:
+Do **not** run the fresh schema over an existing store. Back up the production database and apply the migrations in order in **Supabase Dashboard → SQL Editor**:
 
-1. Open the Supabase dashboard and choose **SQL Editor → New query**. If your store is still on v2, first copy all of `supabase/migration_v3.sql` into the editor, click **Run**, and wait for success.
-2. In **SQL Editor**, choose **New query** again. Open this repository file `supabase/migration_v4.sql`, copy the entire file, and paste it into the query editor.
-3. Click **Run** and wait for the success result before using the new price/editing screens. The v4 migration is additive and uses idempotent `IF NOT EXISTS`/policy replacement patterns; it adds authenticated grants and RLS for its audit tables and does not create sample data.
-4. Reload the app after the migration completes. Back up the production database before applying any migration.
+1. If the database is still on v2, choose **New query**, copy the complete `supabase/migration_v3.sql`, paste it, click **Run**, and wait for success.
+2. If the database is on v3, choose **New query**, copy the complete `supabase/migration_v4.sql`, paste it, click **Run**, and wait for success. Skip this step for databases already on v4 or created from the existing fresh schema.
+3. Choose **New query** again. Copy the complete `supabase/migration_v5.sql` from this repository into the SQL Editor and click **Run**. Wait for the success result before opening the updated app. V5 adds private cost records/RPCs, vendor association and return/restock tables/functions, return and urgent-expiry settings, MRP snapshot markers, and explicit column-level grants so staff API reads cannot expose legacy buying-cost columns. The migration is additive/idempotent and contains no sample inserts.
+4. Reload the app. Do not run `supabase/schema.sql` on an existing store.
 
-For a brand-new Supabase project, use `supabase/schema.sql` instead; it already contains the v4 schema. Do not run the fresh schema on top of an existing store. This workspace cannot execute or verify SQL against your live Supabase project, so test migrations and owner/staff RLS in a non-production project first.
+For a brand-new Supabase project, use `supabase/schema.sql`; it contains the final v5 schema overlay. This workspace cannot execute SQL against your live Supabase project, so verify migrations, Auth, billing and owner/staff RLS in a non-production project first. Real-database tests have not been performed here.
+
+## Pricing, suppliers, returns and expiry
+
+- Customer savings = `(MRP − selling price) / MRP × 100`; unit profit = `selling price − buying price`; profit % = `unit profit / selling price × 100`; markup % = `unit profit / buying price × 100` (shown on owner product detail). Selling price cannot exceed MRP.
+- Buying costs live in owner-only tables. The v5 migration removes authenticated access to legacy cost columns from products, batches and sale lines, and grants read access only to explicit public columns. Owner screens use owner-checking RPCs; the security-definer sale function reads costs internally. Staff product/batch/receipt reads do not include costs.
+- **More → Dues → Suppliers** opens vendor detail, adjusted balances, linked products, realized profit on costed sales, and estimated current-stock profit. Owner quick-fill assigns missing buying costs. Product import recognizes buying/purchase cost and supplier/vendor columns; unknown supplier names are created for owner imports.
+- Owner product details and bulk editing support vendor assignment. The supplier return screen records partial quantities, stock deductions, rejected return restorations, settlement method and credits against oldest open supplier bills. Return windows can be configured in **More → Settings**.
+- Urgent and soon expiry windows are configurable. Staff see only safe inventory attention counts/names, never supplier money. Owners can add restock requests, mark progress and share the active list through WhatsApp. Reports include return-credit and write-off totals.
 
 ## Staff accounts without deploying an Edge Function
 
@@ -80,12 +88,12 @@ Camera scanning requires HTTPS. The same Vite build can be hosted on Netlify wit
 ## Main features
 
 - Owner-first authentication, persistent sessions, password reset, owner/staff role checks and SQL RLS.
-- Two-price products with printed MRP and selling price, MRP confirmation flags, savings-aware receipts, price filters/sorting, and cost-first stock/profit estimates.
+- Two-price products with printed MRP and selling price, savings-aware bills/receipts, customer-savings and owner-only profit calculations, supplier associations, and owner-only buying costs.
 - Barcode scanning, inventory search/sorting, stock batches, category limits, grouped expiry alerts and offline stock queue.
 - Owner-only product editing, soft hide/restore for products with sales, audited stock corrections and batch history, and preview/undo bulk changes.
-- Excel/CSV imports with separate MRP/selling-price aliases, missing-price inference, validation, repeat-import detection, explicit duplicate-barcode choices, progress and time-limited undo.
+- Excel/CSV imports with MRP, selling-price, purchase-cost and supplier mappings, validation, repeat-import detection, duplicate-barcode choices, progress and time-limited undo.
 - FEFO Cash/UPI/Credit billing, customer selection, receipts, searchable history and owner cancellation/restock.
-- Supplier purchases, supplier dues/partial payments, customer balances and payments.
+- Supplier purchases/dues, partial returns and credits, restock tracking, customer balances and payments.
 - Owner-only reports, CSV/XLSX exports and a full multi-sheet backup including supplier/customer ledgers.
 - English/Tamil navigation and installable PWA shell.
 
