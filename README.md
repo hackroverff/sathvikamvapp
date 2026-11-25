@@ -30,16 +30,16 @@ There is no seeded sample/demo store. Use only real store data.
 4. Start the app and use **Create owner account**. The first signed-in account claims the one-time owner role through `claim_first_owner()`. Then disable public sign-ups under **Authentication → Settings**.
 5. For owner password resets, allow the deployed site URL in **Authentication → URL Configuration**. Enable Realtime for `products`, `batches`, and `sales` under **Database → Replication**.
 
-## Upgrade an existing v2 database (important)
+## Upgrade an existing database (important)
 
-Do **not** run the fresh schema over an existing store. Run the single additive migration instead:
+Do **not** run the fresh schema over an existing store. Apply migrations in order, once each:
 
-1. Open the Supabase project dashboard.
-2. Click **SQL Editor** in the left sidebar, then **New query**.
-3. Open this repository file `supabase/migration_v3.sql`, copy the entire file, and paste it into the query editor.
-4. Click **Run** and wait for the success result before using the new screens. The migration uses additive `IF NOT EXISTS`/`ADD VALUE IF NOT EXISTS` changes, grants authenticated-role privileges for each new table, and leaves RLS enabled. It does not create demo records.
+1. Open the Supabase dashboard and choose **SQL Editor → New query**. If your store is still on v2, first copy all of `supabase/migration_v3.sql` into the editor, click **Run**, and wait for success.
+2. In **SQL Editor**, choose **New query** again. Open this repository file `supabase/migration_v4.sql`, copy the entire file, and paste it into the query editor.
+3. Click **Run** and wait for the success result before using the new price/editing screens. The v4 migration is additive and uses idempotent `IF NOT EXISTS`/policy replacement patterns; it adds authenticated grants and RLS for its audit tables and does not create sample data.
+4. Reload the app after the migration completes. Back up the production database before applying any migration.
 
-The migration has not been executed against your live project in this workspace. Make a database backup before applying it to a production store.
+For a brand-new Supabase project, use `supabase/schema.sql` instead; it already contains the v4 schema. Do not run the fresh schema on top of an existing store. This workspace cannot execute or verify SQL against your live Supabase project, so test migrations and owner/staff RLS in a non-production project first.
 
 ## Staff accounts without deploying an Edge Function
 
@@ -47,7 +47,9 @@ The owner can open **More → Staff accounts → Open staff setup help**. The sc
 
 Use **Deactivate** or **Reactivate** in the staff list at any time. Deactivation is done by an owner-checked database function and immediately prevents the staff profile from accessing store data. For password resets, use Supabase **Authentication → Users** or the app’s Forgot password flow.
 
-Staff can add stock, search products, bill and add customer identities. RLS denies staff access to supplier money screens, reports, exports, customer balances, and customer payment history. Staff customer queries are restricted to the `id`, `name`, and `phone` columns.
+Staff can read products/prices, search and scan, bill, add stock batches, and add customer identities. Staff cannot edit product details/prices, edit or correct existing batches, adjust stock, bulk edit, hide, or delete products; those write restrictions are enforced by RLS (not just hidden controls). RLS also denies staff access to supplier money screens, reports, exports, customer balances, and customer payment history. Staff customer queries are restricted to the `id`, `name`, and `phone` columns.
+
+Product changes and owner stock adjustments are retained in `product_changes` and `stock_adjustments`, shown on product details, and included in exports/full backups. Products with sales cannot be deleted; owners can hide them from working lists while keeping historical bills and reports intact. A hidden product can be restored with **Show hidden**.
 
 ## Import stock
 
@@ -78,8 +80,10 @@ Camera scanning requires HTTPS. The same Vite build can be hosted on Netlify wit
 ## Main features
 
 - Owner-first authentication, persistent sessions, password reset, owner/staff role checks and SQL RLS.
+- Two-price products with printed MRP and selling price, MRP confirmation flags, savings-aware receipts, price filters/sorting, and cost-first stock/profit estimates.
 - Barcode scanning, inventory search/sorting, stock batches, category limits, grouped expiry alerts and offline stock queue.
-- Excel/CSV imports with validation, repeat-import detection, explicit duplicate-barcode choices, progress and time-limited undo.
+- Owner-only product editing, soft hide/restore for products with sales, audited stock corrections and batch history, and preview/undo bulk changes.
+- Excel/CSV imports with separate MRP/selling-price aliases, missing-price inference, validation, repeat-import detection, explicit duplicate-barcode choices, progress and time-limited undo.
 - FEFO Cash/UPI/Credit billing, customer selection, receipts, searchable history and owner cancellation/restock.
 - Supplier purchases, supplier dues/partial payments, customer balances and payments.
 - Owner-only reports, CSV/XLSX exports and a full multi-sheet backup including supplier/customer ledgers.

@@ -9,7 +9,7 @@ export function buildStockAlerts(products, today, windowDays = 45) {
   ).sort((a, b) => asDay(b.expiry_date).localeCompare(asDay(a.expiry_date)));
 
   const expiredUnitCount = expiredBatches.reduce((sum, batch) => sum + Number(batch.units || 0), 0);
-  const expiredStockValue = expiredBatches.reduce((sum, batch) => sum + Number(batch.units || 0) * Number(batch.product.mrp || 0), 0);
+  const expiredStockValue = expiredBatches.reduce((sum, batch) => sum + Number(batch.units || 0) * Number(batch.product.selling_price ?? batch.product.mrp ?? 0), 0);
   const expiredProductCount = new Set(expiredBatches.map(batch => batch.product.id)).size;
 
   const expiringRaw = (products || []).flatMap(product =>
@@ -24,7 +24,7 @@ export function buildStockAlerts(products, today, windowDays = 45) {
     const key = `${batch.product.id}|${asDay(batch.expiry_date)}`;
     const row = groups.get(key) || { ...batch, units: 0, value: 0, batchIds: [], discounted: true };
     row.units += Number(batch.units || 0);
-    row.value += Number(batch.units || 0) * Number(batch.cost_price ?? batch.product.cost_price ?? batch.product.mrp ?? 0);
+    row.value += Number(batch.units || 0) * Number(batch.cost_price ?? batch.product.cost_price ?? batch.product.selling_price ?? batch.product.mrp ?? 0);
     row.batchIds.push(batch.id);
     row.discounted = row.discounted && !!batch.discounted;
     groups.set(key, row);

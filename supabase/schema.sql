@@ -94,7 +94,8 @@ create table if not exists public.categories (
 create table if not exists public.products (
   id uuid primary key default gen_random_uuid(), barcode text unique,
   name text not null, category text not null default 'General',
-  mrp numeric(12,2) not null check(mrp>=0), cost_price numeric(12,2) check(cost_price is null or cost_price>=0),
+  mrp numeric(12,2) not null check(mrp>=0), selling_price numeric(12,2), mrp_confirmed boolean not null default false, hidden boolean not null default false, cost_price numeric(12,2) check(cost_price is null or cost_price>=0),
+  check(selling_price is null or (selling_price>=0 and selling_price<=mrp)),
   unit_type public.unit_type not null default 'piece', low_stock_limit integer not null default 5 check(low_stock_limit>=0),
   created_import_id uuid references public.stock_imports(id) on delete set null,
   created_at timestamptz not null default now()
@@ -104,7 +105,7 @@ create table if not exists public.batches (
   mfg_date date, expiry_date date, units numeric(12,3) not null check(units>=0),
   discounted boolean not null default false, client_op_id text unique,
   import_id uuid references public.stock_imports(id) on delete set null,
-  purchase_id uuid references public.purchases(id) on delete set null,
+  purchase_id uuid references public.purchases(id) on delete set null, deleted_at timestamptz,
   cost_price numeric(12,2) check(cost_price is null or cost_price>=0),
   created_at timestamptz not null default now(),
   check(mfg_date is null or expiry_date is null or expiry_date>mfg_date)
@@ -120,8 +121,8 @@ create table if not exists public.sales (
 );
 create table if not exists public.sale_items (
   id uuid primary key default gen_random_uuid(), sale_id uuid not null references public.sales(id) on delete cascade,
-  product_id uuid not null references public.products(id), batch_id uuid references public.batches(id),
-  quantity numeric(12,3) not null check(quantity>0), price numeric(12,2) not null check(price>=0),
+  product_id uuid not null references public.products(id), batch_id uuid references public.batches(id) on delete set null,
+  quantity numeric(12,3) not null check(quantity>0), price numeric(12,2) not null check(price>=0), mrp numeric(12,2),
   cost_price numeric(12,2), gst_rate numeric(5,2)
 );
 create table if not exists public.customer_payments (
@@ -131,12 +132,27 @@ create table if not exists public.customer_payments (
   mode text not null check(mode in ('cash','upi')), note text,
   created_by uuid references auth.users(id) on delete set null, canceled_at timestamptz
 );
+create table if not exists public.product_changes (
+  id uuid primary key default gen_random_uuid(), product_id uuid not null,
+  product_name text not null, changed_by uuid references auth.users(id) on delete set null,
+  field_name text not null, old_value text, new_value text,
+  created_at timestamptz not null default now()
+);
+create table if not exists public.stock_adjustments (
+  id uuid primary key default gen_random_uuid(), batch_id uuid, product_id uuid,
+  product_name text not null, batch_mfg_date date, batch_expiry_date date,
+  units_before numeric(12,3), delta numeric(12,3) not null,
+  reason text not null, who uuid references auth.users(id) on delete set null,
+  created_at timestamptz not null default now()
+);
 create table if not exists public.shop_settings (key text primary key, value jsonb not null default '{}'::jsonb);
 
 create index if not exists batches_fefo_idx on public.batches(product_id,expiry_date nulls last,created_at);
 create index if not exists batches_import_id_idx on public.batches(import_id) where import_id is not null;
 create index if not exists purchases_supplier_date_idx on public.purchases(supplier_id,bill_date desc);
 create index if not exists purchase_payments_purchase_idx on public.purchase_payments(purchase_id) where canceled_at is null;
+create index if not exists product_changes_product_created_idx on public.product_changes(product_id,created_at desc);
+create index if not exists stock_adjustments_product_created_idx on public.stock_adjustments(product_id,created_at desc);
 create index if not exists customer_payments_customer_idx on public.customer_payments(customer_id,paid_on desc) where canceled_at is null;
 create index if not exists sales_created_at_idx on public.sales(created_at desc);
 create index if not exists sale_items_product_idx on public.sale_items(product_id);
@@ -176,7 +192,7 @@ language plpgsql security definer set search_path=public
 as $$
 declare v_sale uuid; v_subtotal numeric(12,2):=0; v_discount numeric(12,2):=coalesce(p_discount,0);
   v_paid numeric(12,2):=coalesce(p_paid_now,0); v_item jsonb; v_pid uuid; v_qty numeric;
-  v_price numeric; v_cost numeric; v_left numeric; v_batch record; v_take numeric(12,3); v_customer public.customers%rowtype;
+  v_price numeric; v_mrp numeric; v_cost numeric; v_hidden boolean; v_left numeric; v_batch record; v_take numeric(12,3); v_customer public.customers%rowtype;
 begin
   if auth.uid() is null or not public.is_store_user() then raise exception 'Sign in to create a bill'; end if;
   if p_items is null or jsonb_typeof(p_items)<>'array' or jsonb_array_length(p_items)=0 then raise exception 'Add at least one item'; end if;
@@ -188,8 +204,10 @@ begin
   for v_item in select * from jsonb_array_elements(p_items) loop
     v_pid:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::numeric;
     if v_qty is null or v_qty<=0 then raise exception 'Quantity must be positive'; end if;
-    select mrp,cost_price into v_price,v_cost from public.products where id=v_pid for update;
+    select coalesce(selling_price,mrp),cost_price,mrp,hidden into v_price,v_cost,v_mrp,v_hidden from public.products where id=v_pid for update;
     if not found then raise exception 'Product not found'; end if;
+    if v_hidden then raise exception 'This product is hidden and cannot be billed'; end if;
+    if v_price>v_mrp then raise exception 'Selling price cannot be more than MRP'; end if;
     v_subtotal:=v_subtotal+v_price*v_qty;
   end loop;
   if v_discount<0 or v_discount>v_subtotal then raise exception 'Discount must be between zero and the bill subtotal'; end if;
@@ -201,12 +219,13 @@ begin
     case when p_payment::text='credit' then p_customer_id else null end,auth.uid()) returning id into v_sale;
   for v_item in select * from jsonb_array_elements(p_items) loop
     v_pid:=(v_item->>'product_id')::uuid; v_qty:=(v_item->>'quantity')::numeric; v_left:=v_qty;
-    select mrp,cost_price into v_price,v_cost from public.products where id=v_pid;
+    select coalesce(selling_price,mrp),cost_price,mrp,hidden into v_price,v_cost,v_mrp,v_hidden from public.products where id=v_pid;
+    if v_hidden then raise exception 'This product is hidden and cannot be billed'; end if;
     for v_batch in select id,units,cost_price from public.batches where product_id=v_pid and units>0 and (expiry_date is null or expiry_date>=current_date) order by expiry_date nulls last,created_at for update loop
       exit when v_left<=0; v_take:=least(v_left,v_batch.units);
       update public.batches set units=units-v_take where id=v_batch.id;
-      insert into public.sale_items(sale_id,product_id,batch_id,quantity,price,cost_price)
-      values(v_sale,v_pid,v_batch.id,v_take,v_price,coalesce(v_batch.cost_price,v_cost));
+      insert into public.sale_items(sale_id,product_id,batch_id,quantity,price,cost_price,mrp)
+      values(v_sale,v_pid,v_batch.id,v_take,v_price,coalesce(v_batch.cost_price,v_cost),v_mrp);
       v_left:=v_left-v_take;
     end loop;
     if v_left>0 then raise exception 'Not enough unexpired stock for % (short by %)',(select name from public.products where id=v_pid),v_left; end if;
@@ -250,6 +269,8 @@ alter table public.batches enable row level security;
 alter table public.sales enable row level security;
 alter table public.sale_items enable row level security;
 alter table public.shop_settings enable row level security;
+alter table public.product_changes enable row level security;
+alter table public.stock_adjustments enable row level security;
 alter table public.stock_imports enable row level security;
 alter table public.expired_stock_removals enable row level security;
 alter table public.suppliers enable row level security;
@@ -265,10 +286,14 @@ drop policy if exists "signed-in users read products" on public.products;
 drop policy if exists "signed-in users add products" on public.products;
 drop policy if exists "owners update products" on public.products;
 drop policy if exists "owners delete products" on public.products;
+drop policy if exists "signed-in users update products" on public.products;
+drop policy if exists "signed-in users delete products" on public.products;
 drop policy if exists "signed-in users read batches" on public.batches;
 drop policy if exists "signed-in users add batches" on public.batches;
 drop policy if exists "owners correct batches" on public.batches;
 drop policy if exists "owners delete batches" on public.batches;
+drop policy if exists "signed-in users update batches" on public.batches;
+drop policy if exists "signed-in users delete batches" on public.batches;
 drop policy if exists "owners read sales" on public.sales;
 drop policy if exists "signed-in users create sales" on public.sales;
 drop policy if exists "owners manage sales" on public.sales;
@@ -303,6 +328,10 @@ drop policy if exists sales_read_owner_or_self on public.sales;
 create policy sales_read_owner_or_self on public.sales for select to authenticated using(public.is_store_user() and (public.is_store_owner() or staff_id=auth.uid()));
 drop policy if exists sale_items_read_owner_or_self on public.sale_items;
 create policy sale_items_read_owner_or_self on public.sale_items for select to authenticated using(public.is_store_user() and (public.is_store_owner() or exists(select 1 from public.sales s where s.id=sale_id and s.staff_id=auth.uid())));
+drop policy if exists product_changes_owner_all on public.product_changes;
+create policy product_changes_owner_all on public.product_changes for all to authenticated using(public.is_store_owner()) with check(public.is_store_owner());
+drop policy if exists stock_adjustments_owner_all on public.stock_adjustments;
+create policy stock_adjustments_owner_all on public.stock_adjustments for all to authenticated using(public.is_store_owner()) with check(public.is_store_owner());
 drop policy if exists settings_read on public.shop_settings;
 create policy settings_read on public.shop_settings for select to authenticated using(public.is_store_user());
 drop policy if exists settings_owner_write on public.shop_settings;
@@ -335,7 +364,7 @@ drop policy if exists customer_payments_owner_all on public.customer_payments;
 create policy customer_payments_owner_all on public.customer_payments for all to authenticated using(public.is_store_owner()) with check(public.is_store_owner());
 
 -- Explicit grants for new tables and the existing app tables used by authenticated sessions.
-grant select,insert,update,delete on public.profiles,public.categories,public.products,public.batches,public.sales,public.sale_items,public.shop_settings to authenticated;
+grant select,insert,update,delete on public.profiles,public.categories,public.products,public.batches,public.sales,public.sale_items,public.shop_settings,public.product_changes,public.stock_adjustments to authenticated;
 grant select,insert,update on public.stock_imports to authenticated;
 grant select,insert on public.expired_stock_removals to authenticated;
 grant select,insert,update,delete on public.suppliers,public.purchases,public.purchase_payments to authenticated;
