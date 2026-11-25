@@ -4,7 +4,8 @@ export const IMPORT_FIELDS = [
   {key:'barcode', label:'Barcode / item code', aliases:['barcode','item code','itemcode','ean','ean code','upc','product code']},
   {key:'name', label:'Product name', aliases:['product name','name','item','item name','description']},
   {key:'category', label:'Category', aliases:['category','product category','group']},
-  {key:'mrp', label:'Selling price (MRP)', aliases:['mrp','selling price per piece','selling price','price','rate','unit price']},
+  {key:'mrp', label:'MRP (printed pack price)', aliases:['mrp','printed mrp','mrp printed','mrp value','printed price','printed pack price','maximum retail price']},
+  {key:'selling_price', label:'Selling price', aliases:['selling price per piece','selling price per unit','selling price','sellingprice','selling_price','sell price','sale price','sales price','selling rate','sell rate','rate','unit price','price','retail price','our price']},
   {key:'mfg_date', label:'Made date', aliases:['manf date','manf. date','mfg date','manufacturing date','manufacture date','mfg_date','mfd','made date']},
   {key:'expiry_date', label:'Expiry date', aliases:['exp date','expiry date','expiration date','expiry','exp_date','best before']},
   {key:'units', label:'Quantity / units', aliases:['unit (this is quantity)','units','unit','qty','quantity','stock','closing stock','balance']},
@@ -89,16 +90,23 @@ export function barcodeText(value) {
 }
 export function mappedRecord(record, mapping, date1904=false) {
   const get=key=>mapping[key]===undefined?'':record.values[mapping[key]];
+  const amount=value=>Number(String(value??'').replace(/[₹,\s]/g,''))||0;
+  const mrpColumn=mapping.mrp!==undefined, sellingColumn=mapping.selling_price!==undefined;
+  const rawMrp=amount(get('mrp')), rawSelling=amount(get('selling_price'));
+  const mrp=rawMrp===0?rawSelling:rawMrp;
+  const selling_price=rawSelling===0?mrp:rawSelling;
   return {
     ...record,
     barcode:barcodeText(get('barcode')),
     name:String(get('name')??'').trim(),
     category:String(get('category')??'').trim()||'General',
-    mrp:Number(String(get('mrp')??'').replace(/[₹,\s]/g,''))||0,
+    mrp,
+    selling_price,
+    mrp_confirmed:mrpColumn&&sellingColumn&&rawMrp>0&&rawSelling>0,
     mfg_date:parseImportedDate(get('mfg_date'),date1904),
     expiry_date:parseImportedDate(get('expiry_date'),date1904),
     units:Number(String(get('units')??'').replace(/[,\s]/g,''))||0,
   };
 }
-export function csvTemplate(){return 'barcode,name,category,mrp,mfg_date,expiry_date,units\n'}
-export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','mfg_date','expiry_date','units']]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}
+export function csvTemplate(){return 'barcode,name,category,mrp,selling_price,mfg_date,expiry_date,units\n'}
+export function workbookTemplate(){const wb=XLSX.utils.book_new();const ws=XLSX.utils.aoa_to_sheet([['barcode','name','category','mrp','selling_price','mfg_date','expiry_date','units']]);XLSX.utils.book_append_sheet(wb,ws,'Stock template');return wb}
